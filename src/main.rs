@@ -1,7 +1,6 @@
 extern crate rand;
 
 use std::f64;
-use std::cell::Cell;
 
 const learning_rate: f64 = 1f64;
 
@@ -10,12 +9,13 @@ struct Network {
 }
 
 struct Layer {
-	neurons: Vec<Neuron>
+	neurons: Vec<Neuron>,
 }
 
 struct Neuron {
 	weights: Vec<f64>,
-	output: Cell<Option<f64>>
+	output: Option<f64>,
+	inputs: Vec<f64>
 }
 
 impl Network {
@@ -31,11 +31,14 @@ impl Network {
 		Network { layers: layers }
 	}
 
-	fn feed_forward(&self, inputs: &Vec<f64>) -> Vec<f64> {
+	fn feed_forward(&mut self, inputs: &Vec<f64>) -> Vec<f64> {
 		let mut result = Vec::clone(inputs);
 
-		for layer in self.layers.iter() {
+		for i in 0..self.layers.len() {
+			// Bias input
 			result.push(1f64);
+
+			let ref mut layer: Layer = self.layers[i];
 
 			result = layer.calc(&result);
 		}
@@ -53,27 +56,54 @@ impl Network {
 
 	fn online_back_propogation(&mut self, inputs: &Vec<f64>, actual: &Vec<f64>) {
 		let mut result: Vec<f64> = self.feed_forward(inputs);
-		let ref mut layers: Layer = self.layers[1];
 
-		for n_i in 0..layers.neurons.len() {
-			let ref mut neuron: Neuron = layers.neurons[n_i];
-			let ref output: f64 = neuron.output.get().expect("Neuron has no outputted value");
-			let mut sum: f64 = 0f64;
-			let mut new_errors: Vec<f64> = Vec::new();
+		// Output layer calc
+		let mut d_error_wrt_input_last_layer_vec: Vec<f64> = Vec::new();
+		for i in 0..self.layers[1].neurons.len() {
+			let ref neuron: Neuron = self.layers[1].neurons[i];
+			let ref output: f64 = neuron.output.expect("Neuron has no outputted value");
 
-			for i in 0..result.len() {
-				let d_error_wrt_output: f64 = result[i] - actual[i];
-				let d_out_wrt_input: f64 = result[i] * (1f64 - result[i]);
-				let d_input_wrt_weight = output;
+			let d_error_wrt_input: f64 = (output - actual[i]) * output * (1f64 - output);
+			d_error_wrt_input_last_layer_vec.push(d_error_wrt_input);
+		}
 
-				let d_error_wrt_weight: f64 = d_error_wrt_output * d_out_wrt_input * d_input_wrt_weight;
+		// Hidden layer calc
+		let mut d_errors_wrt_inputs_hidden_layer_vec: Vec<f64> = Vec::new();
+		for i in 0..self.layers[0].neurons.len() {
+			let ref neuron: Neuron = self.layers[0].neurons[i];
+			let ref output: f64 = neuron.output.expect("Neuron has no outputted value");
 
-				new_errors.push(d_error_wrt_weight);
-				sum =  sum + d_error_wrt_weight;
+			// Each neuron on the latter layer
+			let mut d_error_wrt_output: f64 = 0f64;
+			for j in 0..self.layers[1].neurons.len() {
+				let ref weight: f64 = self.layers[1].neurons[j].weights[i];
+				d_error_wrt_output = d_error_wrt_output + d_error_wrt_input_last_layer_vec[j] * weight;
 			}
 
-			result = new_errors;
-			neuron.weights[0] = neuron.weights[0] - (sum * learning_rate);
+			let d_error_wrt_input:f64 = d_error_wrt_output * (output * (1f64 * output));
+			d_errors_wrt_inputs_hidden_layer_vec.push(d_error_wrt_input);
+		}
+
+		// Update output layer
+		for i in 0..self.layers[1].neurons.len() {
+			let ref mut neuron: Neuron = self.layers[1].neurons[i];
+			
+			for j in 0..neuron.weights.len() {
+				let d_error_wrt_weight = d_error_wrt_input_last_layer_vec[i] * neuron.inputs[j];
+
+				neuron.weights[j] = neuron.weights[j] - learning_rate * d_error_wrt_weight;
+			}
+		}
+
+		// Update hidden layer
+		for i in 0..self.layers[0].neurons.len() {
+			let ref mut neuron: Neuron = self.layers[0].neurons[i];
+
+			for j in 0..neuron.weights.len() {
+				let d_error_wrt_weight = d_errors_wrt_inputs_hidden_layer_vec[i] * neuron.inputs[j];
+
+				neuron.weights[j] = neuron.weights[j] - learning_rate * d_error_wrt_weight;
+			}
 		}
 	}
 
@@ -91,13 +121,16 @@ impl Layer {
 		Layer { neurons: neurons }
 	}
 
-	fn calc(&self, inputs: &Vec<f64>) -> Vec<f64> {
-		self.neurons
-			.iter()
-			.map(|n| { 
-				n.calc(inputs)
-			})
-			.collect::<Vec<f64>>()
+	fn calc(&mut self, inputs: &Vec<f64>) -> Vec<f64> {
+		let mut results: Vec<f64> = Vec::new();
+
+		for i in 0..self.neurons.len() {
+			let ref mut neuron: Neuron = self.neurons[i];
+			let result: f64 = neuron.calc(inputs);
+			results.push(result);
+		}
+
+		results	
 	}
 }
 
@@ -109,15 +142,16 @@ impl Neuron {
 			let num: f64 = (rand::random::<f64>() - 0.5f64) * 2f64;
 			weights.push(num);
 		}
-		Neuron { weights: weights, output: Cell::new(None) }
+		Neuron { weights: weights, output: None, inputs: Vec::new() }
 	}
 
-	fn calc(&self, inputs: &Vec<f64>) -> f64 {
+	fn calc(&mut self, inputs: &Vec<f64>) -> f64 {
 		let sum: f64 = self.weights.iter().zip(inputs.iter()).map(|(x, y)| x*y).sum();
 		let e_to_sum: f64 = (-sum).exp();
 		let result = 1f64 / (e_to_sum + 1f64);
-		
-		self.output.set(Some(result));
+
+		self.output = Some(result);
+		self.inputs = Vec::clone(inputs);
 
 		result
 	}
@@ -125,14 +159,14 @@ impl Neuron {
 }
 
 fn main() {
-	let mut nn = Network::new(2, vec![2, 2]);
+	let mut nn = Network::new(3, vec![2, 3]);
 
-	let input = vec![0.4f64, 0.36f64];
-	let target = vec![0.91f64, 0.25f64];
+	let input = vec![0.4f64, 0.36f64, 0.88f64];
+	let target = vec![0.91f64, 0.25f64, 0.55f64];
 
 	let e1 = nn.feed_forward(&input);
 
-	for _ in 0..100000 {
+	for _ in 0..1000 {
 		let actual = nn.online_back_propogation(&input, &target);
 	}
 
