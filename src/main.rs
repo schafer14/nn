@@ -2,7 +2,7 @@ extern crate rand;
 
 use std::f64;
 
-const learning_rate: f64 = 1f64;
+const LEARNING_RATE: f64 = 1f64;
 
 struct Network {
 	layers: Vec<Layer>
@@ -46,63 +46,66 @@ impl Network {
 		result
 	}
 
+	#[allow(dead_code)]
 	fn total_error(&mut self, inputs: &Vec<f64>, actual: &Vec<f64>) -> f64{
 		let result = self.feed_forward(inputs);
 
-		let error_proxy: f64 = result.iter().zip(inputs.iter()).map(|(x, y)| (x - y)*(x - y)).sum();
+		let error_proxy: f64 = result.iter().zip(actual.iter()).map(|(x, y)| (x - y)*(x - y)).sum();
 
 		error_proxy / 2f64
 	}
 
 	fn online_back_propogation(&mut self, inputs: &Vec<f64>, actual: &Vec<f64>) {
-		let mut result: Vec<f64> = self.feed_forward(inputs);
+		self.feed_forward(inputs);
+
+		let index_of_last_layer: usize = self.layers.len() - 1;
+		let mut d_errors_wrt_input: Vec<Vec<f64>> = Vec::new();
 
 		// Output layer calc
 		let mut d_error_wrt_input_last_layer_vec: Vec<f64> = Vec::new();
-		for i in 0..self.layers[1].neurons.len() {
-			let ref neuron: Neuron = self.layers[1].neurons[i];
+		for i in 0..self.layers[index_of_last_layer].neurons.len() {
+			let ref neuron: Neuron = self.layers[index_of_last_layer].neurons[i];
 			let ref output: f64 = neuron.output.expect("Neuron has no outputted value");
 
 			let d_error_wrt_input: f64 = (output - actual[i]) * output * (1f64 - output);
 			d_error_wrt_input_last_layer_vec.push(d_error_wrt_input);
 		}
 
-		// Hidden layer calc
-		let mut d_errors_wrt_inputs_hidden_layer_vec: Vec<f64> = Vec::new();
-		for i in 0..self.layers[0].neurons.len() {
-			let ref neuron: Neuron = self.layers[0].neurons[i];
-			let ref output: f64 = neuron.output.expect("Neuron has no outputted value");
+		d_errors_wrt_input.insert(0, d_error_wrt_input_last_layer_vec);
 
-			// Each neuron on the latter layer
-			let mut d_error_wrt_output: f64 = 0f64;
-			for j in 0..self.layers[1].neurons.len() {
-				let ref weight: f64 = self.layers[1].neurons[j].weights[i];
-				d_error_wrt_output = d_error_wrt_output + d_error_wrt_input_last_layer_vec[j] * weight;
+		// Hidden layer calc
+		for l in 0..index_of_last_layer {
+			let mut d_errors_wrt_inputs_hidden_layer_vec: Vec<f64> = Vec::new();
+
+			for i in 0..self.layers[l].neurons.len() {
+				let ref neuron: Neuron = self.layers[l].neurons[i];
+				let ref output: f64 = neuron.output.expect("Neuron has no outputted value");
+				let ref d_error_wrt_input_prev = d_errors_wrt_input[0];
+
+				// Each neuron on the latter layer
+				let mut d_error_wrt_output: f64 = 0f64;
+				for j in 0..self.layers[l + 1].neurons.len() {
+					let ref weight: f64 = self.layers[l + 1].neurons[j].weights[i];
+					d_error_wrt_output = d_error_wrt_output + d_error_wrt_input_prev[j] * weight;
+				}
+
+				let d_error_wrt_input:f64 = d_error_wrt_output * (output * (1f64 * output));
+				d_errors_wrt_inputs_hidden_layer_vec.push(d_error_wrt_input);
 			}
 
-			let d_error_wrt_input:f64 = d_error_wrt_output * (output * (1f64 * output));
-			d_errors_wrt_inputs_hidden_layer_vec.push(d_error_wrt_input);
+			d_errors_wrt_input.insert(0, d_errors_wrt_inputs_hidden_layer_vec);
 		}
 
 		// Update output layer
-		for i in 0..self.layers[1].neurons.len() {
-			let ref mut neuron: Neuron = self.layers[1].neurons[i];
-			
-			for j in 0..neuron.weights.len() {
-				let d_error_wrt_weight = d_error_wrt_input_last_layer_vec[i] * neuron.inputs[j];
+		for l in 0..self.layers.len() {
+			for i in 0..self.layers[l].neurons.len() {
+				let ref mut neuron: Neuron = self.layers[l].neurons[i];
+				
+				for j in 0..neuron.weights.len() {
+					let d_error_wrt_weight = d_errors_wrt_input[l][i] * neuron.inputs[j];
 
-				neuron.weights[j] = neuron.weights[j] - learning_rate * d_error_wrt_weight;
-			}
-		}
-
-		// Update hidden layer
-		for i in 0..self.layers[0].neurons.len() {
-			let ref mut neuron: Neuron = self.layers[0].neurons[i];
-
-			for j in 0..neuron.weights.len() {
-				let d_error_wrt_weight = d_errors_wrt_inputs_hidden_layer_vec[i] * neuron.inputs[j];
-
-				neuron.weights[j] = neuron.weights[j] - learning_rate * d_error_wrt_weight;
+					neuron.weights[j] = neuron.weights[j] - LEARNING_RATE * d_error_wrt_weight;
+				}
 			}
 		}
 	}
@@ -159,19 +162,19 @@ impl Neuron {
 }
 
 fn main() {
-	let mut nn = Network::new(3, vec![2, 3]);
+	let mut nn = Network::new(2, vec![2, 4]);
 
-	let input = vec![0.4f64, 0.36f64, 0.88f64];
-	let target = vec![0.91f64, 0.25f64, 0.55f64];
+	let input = vec![0.4f64, 0.36f64];
+	let target = vec![0.91f64, 0.25f64, 0.55f64, 0.11f64];
 
 	let e1 = nn.feed_forward(&input);
 
-	for _ in 0..1000 {
-		let actual = nn.online_back_propogation(&input, &target);
+	for _ in 0..1000000 {
+		nn.online_back_propogation(&input, &target);
 	}
 
 	let e2 = nn.feed_forward(&input);
 
-	println!("E1 {:?}, e2 {:?}", e1, e2)
+	println!("E1 {:?}, e2 {:?}", e1, e2);
 }
 
