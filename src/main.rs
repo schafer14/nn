@@ -76,16 +76,17 @@ impl Network {
 		// Hidden layer calc
 		for l in 0..index_of_last_layer {
 			let mut d_errors_wrt_inputs_hidden_layer_vec: Vec<f64> = Vec::new();
+			let index_of_layer: usize = index_of_last_layer - l - 1;
 
-			for i in 0..self.layers[l].neurons.len() {
-				let ref neuron: Neuron = self.layers[l].neurons[i];
-				let ref output: f64 = neuron.output.expect("Neuron has no outputted value");
+			for i in 0..self.layers[index_of_layer].neurons.len() {
 				let ref d_error_wrt_input_prev = d_errors_wrt_input[0];
+				let ref neuron: Neuron = self.layers[index_of_layer].neurons[i];
+				let ref output: f64 = neuron.output.expect("Neuron has no outputted value");
 
 				// Each neuron on the latter layer
 				let mut d_error_wrt_output: f64 = 0f64;
-				for j in 0..self.layers[l + 1].neurons.len() {
-					let ref weight: f64 = self.layers[l + 1].neurons[j].weights[i];
+				for j in 0..self.layers[index_of_layer + 1].neurons.len() {
+					let ref weight: f64 = self.layers[index_of_layer + 1].neurons[j].weights[i];
 					d_error_wrt_output = d_error_wrt_output + d_error_wrt_input_prev[j] * weight;
 				}
 
@@ -162,14 +163,14 @@ impl Neuron {
 }
 
 fn main() {
-	let mut nn = Network::new(2, vec![2, 4]);
+	let mut nn = Network::new(3, vec![3, 23, 54, 4]);
 
-	let input = vec![0.4f64, 0.36f64];
+	let input = vec![0.4f64, 0.36f64, 0.54];
 	let target = vec![0.91f64, 0.25f64, 0.55f64, 0.11f64];
 
 	let e1 = nn.feed_forward(&input);
 
-	for _ in 0..1000000 {
+	for _ in 0..1000 {
 		nn.online_back_propogation(&input, &target);
 	}
 
